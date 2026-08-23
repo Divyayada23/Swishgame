@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Swish for a Sign</title>
+<title>Swish Signs</title>
 <style>
   html, body {
     margin: 0;
@@ -24,13 +24,13 @@
 
   #title {
     position: absolute;
-    top: 14px;
+    top: 10px;
     left: 0;
     right: 0;
     text-align: center;
-    font-size: 20px;
+    font-size: 15px;
     font-weight: 700;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
     color: #111;
     z-index: 5;
     pointer-events: none;
@@ -38,11 +38,11 @@
 
   #subtitle {
     position: absolute;
-    top: 40px;
+    top: 30px;
     left: 0;
     right: 0;
     text-align: center;
-    font-size: 12px;
+    font-size: 10px;
     color: #999;
     z-index: 5;
     pointer-events: none;
@@ -57,9 +57,9 @@
 
   #scoreCount {
     position: absolute;
-    top: 14px;
-    right: 18px;
-    font-size: 13px;
+    top: 10px;
+    right: 14px;
+    font-size: 11px;
     color: #bbb;
     z-index: 5;
     pointer-events: none;
@@ -76,17 +76,17 @@
   }
 
   #messageCard {
-    max-width: 78%;
+    max-width: 70%;
     background: #ffffff;
-    border: 2px solid #111;
-    border-radius: 18px;
-    padding: 22px 26px;
+    border: 1.5px solid #111;
+    border-radius: 14px;
+    padding: 14px 16px;
     text-align: center;
-    font-size: 17px;
+    font-size: 13px;
     font-weight: 600;
-    line-height: 1.45;
+    line-height: 1.4;
     color: #111;
-    box-shadow: 0 6px 0 #111;
+    box-shadow: 0 4px 0 #111;
     opacity: 0;
     transform: translateY(14px) scale(0.94);
     transition: opacity 0.28s ease, transform 0.28s cubic-bezier(.2,1.4,.4,1);
@@ -99,8 +99,8 @@
 
   #messageCard .tap-hint {
     display: block;
-    margin-top: 12px;
-    font-size: 11px;
+    margin-top: 9px;
+    font-size: 9px;
     font-weight: 500;
     color: #b0784f;
     letter-spacing: 0.3px;
@@ -111,7 +111,7 @@
     left: 0;
     right: 0;
     text-align: center;
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 600;
     color: #b0784f;
     z-index: 6;
@@ -127,7 +127,7 @@
 
   #demoHand {
     position: absolute;
-    font-size: 26px;
+    font-size: 20px;
     z-index: 6;
     pointer-events: none;
     opacity: 0;
@@ -317,13 +317,13 @@
 
     hoop.rimY = H * 0.30;
     hoop.rimCenterX = W * 0.5;
-    hoop.rimWidth = Math.min(W * 0.44, 200);
+    hoop.rimWidth = Math.min(W * 0.30, 130);
     hoop.rimHeight = hoop.rimWidth * 0.16;
     hoop.backboardW = hoop.rimWidth * 0.9;
     hoop.backboardH = hoop.rimWidth * 0.55;
     hoop.poleX = hoop.rimCenterX;
 
-    ballRadius = Math.min(W, H) * 0.045;
+    ballRadius = Math.min(W, H) * 0.032;
     demoLabelEl.style.top = (H * 0.60) + 'px';
     resetBall();
   }
