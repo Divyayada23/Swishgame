@@ -11,7 +11,7 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #ffffff;
+    background: transparent;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     touch-action: none;
   }
@@ -141,7 +141,7 @@
 </head>
 <body>
 <div id="wrap">
-  <div id="title">🏀 Swish for a Sign</div>
+  <div id="title">🏀 Swish Signs</div>
   <div id="subtitle">flick the ball toward the hoop</div>
   <div id="scoreCount">Swishes: 0</div>
   <canvas id="game"></canvas>
@@ -388,14 +388,6 @@
     const rimY = hoop.rimY;
     const rimW = hoop.rimWidth;
     const rimH = hoop.rimHeight;
-
-    // pole
-    ctx.strokeStyle = '#111';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.moveTo(cx + rimW * 0.62, rimY - hoop.backboardH * 0.15);
-    ctx.lineTo(cx + rimW * 0.62, H * 0.02);
-    ctx.stroke();
 
     // backboard
     const bbX = cx - hoop.backboardW / 2;
