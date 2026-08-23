@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Swish for a Sign</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    touch-action: none;
+  }
+
+  #wrap {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  #title {
+    position: absolute;
+    top: 14px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #111;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  #subtitle {
+    position: absolute;
+    top: 40px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 12px;
+    color: #999;
+    z-index: 5;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  #scoreCount {
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    font-size: 13px;
+    color: #bbb;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  #messageOverlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  #messageCard {
+    max-width: 78%;
+    background: #ffffff;
+    border: 2px solid #111;
+    border-radius: 18px;
+    padding: 22px 26px;
+    text-align: center;
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1.45;
+    color: #111;
+    box-shadow: 0 6px 0 #111;
+    opacity: 0;
+    transform: translateY(14px) scale(0.94);
+    transition: opacity 0.28s ease, transform 0.28s cubic-bezier(.2,1.4,.4,1);
+  }
+
+  #messageCard.show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  #messageCard .tap-hint {
+    display: block;
+    margin-top: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #b0784f;
+    letter-spacing: 0.3px;
+  }
+
+  #demoLabel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: #b0784f;
+    z-index: 6;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    letter-spacing: 0.3px;
+  }
+
+  #demoLabel.show {
+    opacity: 1;
+  }
+
+  #demoHand {
+    position: absolute;
+    font-size: 26px;
+    z-index: 6;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -50%);
+  }
+
+  #demoHand.show {
+    opacity: 1;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="title">🏀 Swish for a Sign</div>
+  <div id="subtitle">flick the ball toward the hoop</div>
+  <div id="scoreCount">Swishes: 0</div>
+  <canvas id="game"></canvas>
+  <div id="demoLabel">drag back &amp; release to shoot</div>
+  <div id="demoHand">👆</div>
+  <div id="messageOverlay">
+    <div id="messageCard"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const subtitle = document.getElementById('subtitle');
+  const scoreCountEl = document.getElementById('scoreCount');
+  const messageCard = document.getElementById('messageCard');
+  const demoLabelEl = document.getElementById('demoLabel');
+  const demoHandEl = document.getElementById('demoHand');
+
+  const MESSAGES = [
+    "Everything your heart desires is already YOURS.",
+    "You are unique, so don't compare yourself to anyone twin.",
+    "Your future shines bright like a diamond.",
+    "Imperfections are so chic — so no shaming yourself.",
+    "You are LOVED and CELEBRATED.",
+    "Money will come and go, so get that matcha girl.",
+    "Take a deep breath — you got this.",
+    "If you're seeing this — celebrate YOU for being YOU.",
+    "Your potential is limitless.",
+    "Ughhh how can you be this cute, funny, charming, intelligent... like the list goes on."
+  ];
+
+  let W, H, DPR;
+  let hoop = {};
+  let ball = {};
+  let particles = [];
+  let score = 0;
+  let lastMessageIndex = -1;
+  let messageShowing = false;
+  let ballInFlight = false;
+  let dragging = false;
+  let dragStart = null;
+  let dragCurrent = null;
+  let ballRadius = 22;
+  let hasScoredThisShot = false;
+  let passedThroughTop = false;
+
+  // ---------- Demo / tutorial ----------
+  let demoActive = true;
+  let demoPhase = 'idle'; // idle -> pulling -> holding -> flight -> messageShown -> waiting
+  let demoPhaseStart = performance.now();
+  let demoPullPoint = null;
+  let demoStartPoint = null;
+  const DEMO_IDLE = 500;
+  const DEMO_PULL = 850;
+  const DEMO_HOLD = 350;
+  const DEMO_FLIGHT_TIMEOUT = 2600;
+  const DEMO_MESSAGE_HOLD = 1700;
+  const DEMO_WAIT = 500;
+
+  function easeInOut(t) {
+    return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+  }
+
+  function endDemo() {
+    if (!demoActive) return;
+    demoActive = false;
+    demoLabelEl.classList.remove('show');
+    demoHandEl.classList.remove('show');
+  }
+
+  function updateDemo(now) {
+    if (!demoActive || messageShowing === true && demoPhase !== 'messageShown') return;
+    const elapsed = now - demoPhaseStart;
+
+    if (demoPhase === 'idle') {
+      demoLabelEl.classList.add('show');
+      demoHandEl.classList.add('show');
+      demoStartPoint = { x: ball.x, y: ball.y };
+      const pullDist = Math.min(H * 0.22, 190);
+      demoPullPoint = { x: ball.x, y: ball.y + pullDist };
+      demoHandEl.style.left = demoStartPoint.x + 'px';
+      demoHandEl.style.top = demoStartPoint.y + 'px';
+      if (elapsed > DEMO_IDLE) {
+        demoPhase = 'pulling';
+        demoPhaseStart = now;
+      }
+    } else if (demoPhase === 'pulling') {
+      const t = Math.min(elapsed / DEMO_PULL, 1);
+      const et = easeInOut(t);
+      const hx = demoStartPoint.x + (demoPullPoint.x - demoStartPoint.x) * et;
+      const hy = demoStartPoint.y + (demoPullPoint.y - demoStartPoint.y) * et;
+      demoHandEl.style.left = hx + 'px';
+      demoHandEl.style.top = hy + 'px';
+      demoDrawState = { dragStart: demoStartPoint, dragCurrent: { x: hx, y: hy } };
+      if (t >= 1) {
+        demoPhase = 'holding';
+        demoPhaseStart = now;
+      }
+    } else if (demoPhase === 'holding') {
+      demoDrawState = { dragStart: demoStartPoint, dragCurrent: demoPullPoint };
+      if (elapsed > DEMO_HOLD) {
+        // release
+        const dx = demoStartPoint.x - demoPullPoint.x;
+        const dy = demoStartPoint.y - demoPullPoint.y;
+        const dist = Math.hypot(dx, dy);
+        const power = Math.min(dist * 0.15, 24);
+        const angle = Math.atan2(dy, dx);
+        ball.vx = Math.cos(angle) * power;
+        ball.vy = Math.sin(angle) * power;
+        ballInFlight = true;
+        demoDrawState = null;
+        demoLabelEl.classList.remove('show');
+        demoHandEl.classList.remove('show');
+        demoPhase = 'flight';
+        demoPhaseStart = now;
+      }
+    } else if (demoPhase === 'flight') {
+      if (messageShowing) {
+        demoPhase = 'messageShown';
+        demoPhaseStart = now;
+      } else if (elapsed > DEMO_FLIGHT_TIMEOUT) {
+        demoPhase = 'waiting';
+        demoPhaseStart = now;
+      }
+    } else if (demoPhase === 'messageShown') {
+      if (elapsed > DEMO_MESSAGE_HOLD) {
+        hideMessage();
+        demoPhase = 'waiting';
+        demoPhaseStart = now;
+      }
+    } else if (demoPhase === 'waiting') {
+      if (elapsed > DEMO_WAIT) {
+        resetBall();
+        demoPhase = 'idle';
+        demoPhaseStart = now;
+      }
+    }
+  }
+
+  let demoDrawState = null;
+
+  function drawDemoAimLine() {
+    if (!demoDrawState) return;
+    const { dragStart, dragCurrent } = demoDrawState;
+    const dx = dragStart.x - dragCurrent.x;
+    const dy = dragStart.y - dragCurrent.y;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(176,120,79,0.55)';
+    ctx.setLineDash([6, 8]);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(ball.x, ball.y);
+    ctx.lineTo(ball.x - dx * 1.4, ball.y - dy * 1.4);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  const GRAVITY = 0.48;
+  const RESTITUTION = 0.45;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    hoop.rimY = H * 0.30;
+    hoop.rimCenterX = W * 0.5;
+    hoop.rimWidth = Math.min(W * 0.44, 200);
+    hoop.rimHeight = hoop.rimWidth * 0.16;
+    hoop.backboardW = hoop.rimWidth * 0.9;
+    hoop.backboardH = hoop.rimWidth * 0.55;
+    hoop.poleX = hoop.rimCenterX;
+
+    ballRadius = Math.min(W, H) * 0.045;
+    demoLabelEl.style.top = (H * 0.60) + 'px';
+    resetBall();
+  }
+
+  function resetBall() {
+    ball.x = W * 0.5;
+    ball.y = H * 0.80;
+    ball.vx = 0;
+    ball.vy = 0;
+    ball.spin = 0;
+    ballInFlight = false;
+    hasScoredThisShot = false;
+    passedThroughTop = false;
+  }
+
+  // ---------- Drawing ----------
+
+  function drawNet(cx, rimY, rimW, sway) {
+    const netHeight = rimW * 0.75;
+    const strands = 8;
+    ctx.strokeStyle = 'rgba(20,20,20,0.55)';
+    ctx.lineWidth = 1.4;
+
+    const topPts = [];
+    const midPts = [];
+    const botPts = [];
+    for (let i = 0; i <= strands; i++) {
+      const t = i / strands;
+      const topX = cx - rimW / 2 + t * rimW;
+      topPts.push({ x: topX, y: rimY });
+      const pinch = 0.32;
+      const midX = cx + (topX - cx) * pinch + sway * 0.4;
+      midPts.push({ x: midX, y: rimY + netHeight * 0.55 });
+      const botX = cx + (topX - cx) * pinch * 0.6 + sway * 0.7;
+      botPts.push({ x: botX, y: rimY + netHeight });
+    }
+
+    for (let i = 0; i <= strands; i++) {
+      ctx.beginPath();
+      ctx.moveTo(topPts[i].x, topPts[i].y);
+      ctx.quadraticCurveTo(midPts[i].x, midPts[i].y, botPts[i].x, botPts[i].y);
+      ctx.stroke();
+    }
+
+    // horizontal rings
+    [0.35, 0.65, 0.9].forEach((frac) => {
+      ctx.beginPath();
+      for (let i = 0; i <= strands; i++) {
+        const t = i / strands;
+        const y0 = rimY + netHeight * frac;
+        const spread = 1 - frac * 0.55;
+        const x = cx + (topPts[i].x - cx) * spread + sway * frac * 0.5;
+        if (i === 0) ctx.moveTo(x, y0);
+        else ctx.lineTo(x, y0);
+      }
+      ctx.stroke();
+    });
+  }
+
+  function drawHoop() {
+    const cx = hoop.rimCenterX;
+    const rimY = hoop.rimY;
+    const rimW = hoop.rimWidth;
+    const rimH = hoop.rimHeight;
+
+    // pole
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(cx + rimW * 0.62, rimY - hoop.backboardH * 0.15);
+    ctx.lineTo(cx + rimW * 0.62, H * 0.02);
+    ctx.stroke();
+
+    // backboard
+    const bbX = cx - hoop.backboardW / 2;
+    const bbY = rimY - hoop.backboardH - rimH * 0.3;
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 3.5;
+    roundRect(bbX, bbY, hoop.backboardW, hoop.backboardH, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    // inner square on backboard
+    ctx.lineWidth = 2;
+    ctx.strokeRect(
+      cx - hoop.backboardW * 0.18,
+      bbY + hoop.backboardH * 0.35,
+      hoop.backboardW * 0.36,
+      hoop.backboardH * 0.42
+    );
+
+    // net (behind rim)
+    const sway = Math.sin(Date.now() / 260) * 2 * (particles.length ? 1 : 0.3);
+    drawNet(cx, rimY, rimW, ball.netSway || 0);
+
+    // rim back half (ellipse) - draw back rim first for depth
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.ellipse(cx, rimY, rimW / 2, rimH / 2, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+
+    // rim front half (drawn after ball for overlap done in render order)
+  }
+
+  function drawRimFront() {
+    const cx = hoop.rimCenterX;
+    const rimY = hoop.rimY;
+    const rimW = hoop.rimWidth;
+    const rimH = hoop.rimHeight;
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.ellipse(cx, rimY, rimW / 2, rimH / 2, 0, 0, Math.PI);
+    ctx.fill();
+
+    // orange accent ring under rim for pop
+    ctx.strokeStyle = '#c97a4a';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.ellipse(cx, rimY + 1.5, rimW / 2 - 1, rimH / 2 - 1, 0, 0, Math.PI);
+    ctx.stroke();
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawBall() {
+    ctx.save();
+    ctx.translate(ball.x, ball.y);
+    ctx.rotate(ball.spin || 0);
+
+    // shadow
+    ctx.restore();
+    const shadowScale = Math.max(0.35, 1 - (H * 0.85 - ball.y) / (H * 0.85) * 0.6);
+    ctx.save();
+    ctx.globalAlpha = 0.15 * shadowScale;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    const groundY = H * 0.86;
+    ctx.ellipse(ball.x, groundY, ballRadius * shadowScale * 1.1, ballRadius * 0.35 * shadowScale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(ball.x, ball.y);
+    ctx.rotate(ball.spin || 0);
+
+    ctx.fillStyle = '#d98a55';
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, ballRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // seams
+    ctx.beginPath();
+    ctx.moveTo(-ballRadius, 0);
+    ctx.lineTo(ballRadius, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, -ballRadius);
+    ctx.lineTo(0, ballRadius);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.ellipse(0, 0, ballRadius * 0.62, ballRadius, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawAimLine() {
+    if (!dragging || !dragStart || !dragCurrent) return;
+    const dx = dragStart.x - dragCurrent.x;
+    const dy = dragStart.y - dragCurrent.y;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(17,17,17,0.35)';
+    ctx.setLineDash([6, 8]);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(ball.x, ball.y);
+    ctx.lineTo(ball.x + dx * 1.4, ball.y + dy * 1.4);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  function drawParticles() {
+    particles.forEach((p) => {
+      ctx.save();
+      ctx.globalAlpha = Math.max(p.life, 0);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+  }
+
+  // ---------- Physics ----------
+
+  function update() {
+    if (ballInFlight) {
+      ball.vy += GRAVITY;
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+      ball.spin = (ball.spin || 0) + ball.vx * 0.03;
+
+      const cx = hoop.rimCenterX;
+      const rimY = hoop.rimY;
+      const rimW = hoop.rimWidth;
+      const leftPost = cx - rimW / 2;
+      const rightPost = cx + rimW / 2;
+
+      // check swish: passes near center of rim moving downward within rim x-range, narrow band
+      if (!hasScoredThisShot &&
+          ball.vy > 0 &&
+          ball.y > rimY - 10 && ball.y < rimY + 22 &&
+          ball.x > leftPost - ballRadius * 0.1 &&
+          ball.x < rightPost + ballRadius * 0.1) {
+        hasScoredThisShot = true;
+        onSwish();
+      }
+
+      // rim collision (simple - bounce off posts if hits edges going up-ish near rim height)
+      const distToRimY = Math.abs(ball.y - rimY);
+      if (!hasScoredThisShot && distToRimY < ballRadius * 0.9) {
+        const distLeft = Math.abs(ball.x - leftPost);
+        const distRight = Math.abs(ball.x - rightPost);
+        if (distLeft < ballRadius * 0.7) {
+          ball.vx = -Math.abs(ball.vx) * 0.6 - 1;
+          ball.vy *= 0.7;
+        } else if (distRight < ballRadius * 0.7) {
+          ball.vx = Math.abs(ball.vx) * 0.6 + 1;
+          ball.vy *= 0.7;
+        }
+      }
+
+      // backboard collision
+      const bbX = cx - hoop.backboardW / 2;
+      const bbTop = rimY - hoop.backboardH - hoop.rimHeight * 0.3;
+      const bbBottom = bbTop + hoop.backboardH;
+      if (ball.x + ballRadius > bbX && ball.x - ballRadius < bbX + hoop.backboardW &&
+          ball.y > bbTop && ball.y < bbBottom && ball.vy < 0) {
+        // hit underside/side loosely - just dampen and redirect down-ish
+        if (ball.x < cx) {
+          ball.vx -= 1.5;
+        } else {
+          ball.vx += 1.5;
+        }
+        ball.vy = Math.abs(ball.vy) * 0.3;
+      }
+
+      // walls
+      if (ball.x - ballRadius < 0) {
+        ball.x = ballRadius;
+        ball.vx *= -RESTITUTION;
+      }
+      if (ball.x + ballRadius > W) {
+        ball.x = W - ballRadius;
+        ball.vx *= -RESTITUTION;
+      }
+      if (ball.y - ballRadius < 0) {
+        ball.y = ballRadius;
+        ball.vy *= -RESTITUTION;
+      }
+
+      // ground
+      const groundY = H * 0.86;
+      if (ball.y + ballRadius > groundY) {
+        ball.y = groundY - ballRadius;
+        ball.vy *= -RESTITUTION;
+        ball.vx *= 0.85;
+        if (Math.abs(ball.vy) < 1.2 && Math.abs(ball.vx) < 0.6) {
+          setTimeout(() => {
+            if (!messageShowing) resetBall();
+          }, 500);
+        }
+      }
+    }
+
+    // particles
+    particles.forEach((p) => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.25;
+      p.life -= 0.018;
+    });
+    particles = particles.filter((p) => p.life > 0);
+  }
+
+  function onSwish() {
+    score++;
+    scoreCountEl.textContent = 'Swishes: ' + score;
+    spawnConfetti();
+    setTimeout(showMessage, 260);
+  }
+
+  function spawnConfetti() {
+    const colors = ['#d98a55', '#111111', '#e8b98a', '#8a5a35'];
+    const cx = hoop.rimCenterX;
+    const cy = hoop.rimY + 10;
+    for (let i = 0; i < 26; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 4;
+      particles.push({
+        x: cx,
+        y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 2,
+        r: 2 + Math.random() * 3,
+        life: 1,
+        color: colors[Math.floor(Math.random() * colors.length)]
+      });
+    }
+  }
+
+  function pickMessage() {
+    let idx;
+    do {
+      idx = Math.floor(Math.random() * MESSAGES.length);
+    } while (idx === lastMessageIndex && MESSAGES.length > 1);
+    lastMessageIndex = idx;
+    return MESSAGES[idx];
+  }
+
+  function showMessage() {
+    messageShowing = true;
+    subtitle.style.opacity = '0';
+    messageCard.innerHTML = pickMessage() + '<span class="tap-hint">tap anywhere to shoot again</span>';
+    requestAnimationFrame(() => {
+      messageCard.classList.add('show');
+    });
+  }
+
+  function hideMessage() {
+    messageCard.classList.remove('show');
+    messageShowing = false;
+    subtitle.style.opacity = '1';
+    resetBall();
+  }
+
+  // ---------- Input ----------
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    if (e.touches && e.touches.length) {
+      return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+    }
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function pointerDown(e) {
+    if (demoActive) {
+      endDemo();
+      resetBall();
+      return;
+    }
+    if (messageShowing) {
+      hideMessage();
+      return;
+    }
+    if (ballInFlight) return;
+    const pos = getPos(e);
+    const d = Math.hypot(pos.x - ball.x, pos.y - ball.y);
+    dragging = true;
+    dragStart = pos;
+    dragCurrent = pos;
+  }
+
+  function pointerMove(e) {
+    if (!dragging) return;
+    dragCurrent = getPos(e);
+  }
+
+  function pointerUp(e) {
+    if (!dragging) return;
+    dragging = false;
+    const dx = dragStart.x - dragCurrent.x;
+    const dy = dragStart.y - dragCurrent.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 8) {
+      dragStart = null;
+      dragCurrent = null;
+      return;
+    }
+    const power = Math.min(dist * 0.15, 24);
+    const angle = Math.atan2(dy, dx);
+    ball.vx = Math.cos(angle) * power;
+    ball.vy = Math.sin(angle) * power;
+    ballInFlight = true;
+    dragStart = null;
+    dragCurrent = null;
+  }
+
+  canvas.addEventListener('mousedown', pointerDown);
+  canvas.addEventListener('mousemove', pointerMove);
+  window.addEventListener('mouseup', pointerUp);
+  canvas.addEventListener('touchstart', (e) => { pointerDown(e); }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => { pointerMove(e); }, { passive: true });
+  canvas.addEventListener('touchend', (e) => { pointerUp(e); }, { passive: true });
+
+  messageCard.addEventListener('click', hideMessage);
+
+  window.addEventListener('resize', resize);
+
+  // ---------- Render loop ----------
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+
+    // floor line
+    ctx.strokeStyle = '#eee';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, H * 0.86);
+    ctx.lineTo(W, H * 0.86);
+    ctx.stroke();
+
+    drawHoop();
+    drawBall();
+    drawRimFront();
+    drawAimLine();
+    drawDemoAimLine();
+    drawParticles();
+
+    update();
+    if (demoActive) updateDemo(performance.now());
+    requestAnimationFrame(render);
+  }
+
+  resize();
+  render();
+})();
+</script>
+</body>
+</html>
